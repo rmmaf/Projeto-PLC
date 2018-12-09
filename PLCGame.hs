@@ -15,17 +15,17 @@ module Main where
     --Boss
     type Boss = GameObject ()
     type InvaderAction a = IOGame GameAttribute () GameState TileAttribute a
-    rows = 1
-    columns = 1
+    bossHealth = 5
+    bossSpeed = 2
     invaderYSpeed = 0
     invaderXSpeed = 4
     enemy1Amount = 64
     enemy1Delay = 2.0
-    enemy1Speed = 3.4
+    enemy1Speed = 3.0
     enemy2Amount = 72
-    enemy2Delay = 1.6
-    enemy2Speed = 3.0
-    
+    enemy2Delay = 3.5
+    enemy2Speed = 6.5
+  
     --EnemiesLeft AmmoLeft TravelDirection JumpPressed T1EnemiesLeft T2EnemiesLeft
     data GameAttribute = GA Int Int Double Bool Int Int
 
@@ -36,8 +36,7 @@ module Main where
     type PLCGameMap = TileMatrix TileAttribute
 
     --Player Settings
-    moveSpeed = 10
-    jumpVelocity = 15
+    jumpVelocity = 20
     pSqSize = 12
     bulletSpeed = 15
     maxAmmo = 100
@@ -56,25 +55,36 @@ module Main where
     tileSize :: GLdouble
     tileSize = 32.0
     -- position of the paths in the list:
-    border1, border2, border3, free1, free2, free3 :: Int
+    border1, border2, border3, free1, free2, free3, inimigoMaior, miniInimigo, megamen, boss  :: Int
     border1 = 1
     border2 = 2
     border3 = 3
     free1   = 4
     free2   = 5
     free3   = 6
+    inimigoMaior = 8
+    miniInimigo = 10
+    megamen = 9
+    boss = 7
+
+    magenta :: InvList
+    magenta = Just [(255,0,255)]
 
     main :: IO ()
     main = do
       let winConfig = ((100,80),(width,height),"PLC Project")
 
-          bmpList  = [("tex.bmp",             Nothing),
-                      ("border1.bmp",         Nothing),
-                      ("border2.bmp",         Nothing),
-                      ("border3.bmp",         Nothing),
-                      ("free1.bmp",           Nothing),
-                      ("free2.bmp",           Nothing),
-                      ("free3.bmp",           Nothing)]
+          bmpList  = [("tex.bmp",             magenta),
+                      ("border1.bmp",         magenta),
+                      ("border2.bmp",         magenta),
+                      ("border3.bmp",         magenta),
+                      ("free1.bmp",           magenta),
+                      ("free2.bmp",           magenta),
+                      ("free3.bmp",           magenta),
+                      ("boss.bmp",            magenta),
+                      ("inimigoMaior.bmp",    magenta),
+                      ("megamen.bmp",         magenta),
+                      ("miniInimigo.bmp",     magenta)]
 
           gameMap  = multiMap [(tileMap map1 tileSize tileSize),
                                (tileMap map2 tileSize tileSize),
@@ -82,12 +92,11 @@ module Main where
 
           groups = [(objectGroup "playerGroup"      [createPlayer] ),
                     (objectGroup "bulletGroup"       createBullets ),
-                    (objectGroup "bossGroup"       [initInvaders] ),
+                    (objectGroup "bossGroup"       [initBoss] ),
                     (objectGroup "enemy1Group"     createEnemiesT1 ),
-                    (objectGroup "enemy2Group"     createEnemiesT2 ),
-                    (objectGroup "helperGroup"      [createHelper] )]
+                    (objectGroup "enemy2Group"     createEnemiesT2 )]
 
-          initAttributes = GA 10 maxAmmo 1.0 False enemy1Amount enemy2Amount
+          initAttributes = GA bossHealth maxAmmo 1.0 False enemy1Amount enemy2Amount
 
           input = [
             (SpecialKey KeyUp,              Press, playerJump)
@@ -106,11 +115,10 @@ module Main where
     
     
     --Cria o player. Neste momento o player é apenas um quadrado vermelho
-    createPlayer :: PlayerCharacter
-    createPlayer = 
-        let playerBounds = [(-pSqSize,-pSqSize),(pSqSize,-pSqSize),(pSqSize,pSqSize),(-pSqSize,pSqSize)] -- 'area' do quadrado
-            playerPoly   = Basic (Polyg playerBounds 1.0 0.0 0.0 Filled) -- gera a forma do player
-        in object "player" playerPoly False (w - pSqSize, pSqSize*10) (0,0) () -- inicializa o player com esta forma gerada
+    createPlayer:: PlayerCharacter
+    createPlayer =
+       let playerPoly = Tex (134/2, 113/2) megamen
+       in object "player" playerPoly False (w - 25, pSqSize*10) (0,0) ()
 
     --Player Collision
 
@@ -124,7 +132,7 @@ module Main where
       (vX, vY) <- getObjectSpeed player
       (GA e a t b et1 et2) <- getGameAttribute
       when(getTileBlocked tile) (do 
-        setObjectPosition (pX, tileSize + pSqSize) player
+        setObjectPosition (pX, tileSize + (pSqSize)) player
         setObjectSpeed (vX, 0) player
         if(b)
          then(setGameAttribute(GA e a t False et1 et2))--Caso o jogador pouse no chão, significa que o pulo acabou. Atualizar o booleano
@@ -202,12 +210,12 @@ module Main where
     spawnBullet :: Modifiers -> Position -> PlayerAction ()
     spawnBullet _ _= do
       (GA e a t b et1 et2) <- getGameAttribute
-      bullet <- findObject ("bullet" ++ (show a)) "bulletGroup" --Encontra a última bala da lista
-      player <- findObject "player" "playerGroup" --Encontra o player
+      bullet <- findObject ("bullet" ++ (show a)) "bulletGroup" 
+      player <- findObject "player" "playerGroup" 
       (pX, pY) <- getObjectPosition player
-      (sX, sY) <- getObjectSize player --Coleta dados do jogador
-      setObjectAsleep False bullet --Spawna efetivamente a bala no mapa
-      setObjectPosition (pX, pY) bullet --Passa os parametros necessários como posição e velocidade.
+      (sX, sY) <- getObjectSize player
+      setObjectAsleep False bullet
+      setObjectPosition (pX, pY) bullet 
       setObjectSpeed (-bulletSpeed, 0) bullet
       setGameAttribute(GA e (a-1) t b et1 et2)
 
@@ -243,52 +251,25 @@ module Main where
       setObjectAsleep True x
       disableAllBullets xs         
                    
-                   
-
-
-
-    ---Space Invaders
     createInvaderAt :: (GLdouble, GLdouble) -> String -> Boss
     createInvaderAt (pX, pY) name =
         let invaderBounds = [(-pSqSize,-pSqSize),(pSqSize,-pSqSize),(pSqSize,pSqSize),(-pSqSize,pSqSize)] -- 'area' do quadrado
             invaderPoly   = Basic (Polyg invaderBounds 1.0 0.5 0.0 Filled) -- gera a forma do player
         in object name invaderPoly False (pX, pY) (invaderXSpeed, invaderYSpeed) () -- inicializa o player com esta forma gerada
 
-    --Invader Helper
-    createHelper :: Boss
-    createHelper =
-        let invaderBounds = [(-pSqSize,-pSqSize),(pSqSize,-pSqSize),(pSqSize,pSqSize),(-pSqSize,pSqSize)] -- 'area' do quadrado
-            invaderPoly   = Basic (Polyg invaderBounds 1.0 1.0 1.0 Filled) -- gera a forma do player
-        in object "helper" invaderPoly False (w/2, h+50) (invaderXSpeed, 0) () -- inicializa o player com esta forma gerada
 
-    createInvaders :: Int-> Int -> [Boss]
-    createInvaders row column
-      | (row >= rows) = []
-      | (column >= columns) = createInvaders (row+1) (-4)
-      | otherwise = do 
-        let offset = pSqSize*2 + 5
-        let x = (w/2)+(offset * (fromIntegral column))
-        let y = (h - 100)+((fromIntegral row) * offset)
-        let name = "invader" ++ (show row) ++ (show column)
-        (createInvaderAt (x, y) (name):(createInvaders (row) (column+1)) )   
-
-    initInvaders :: Boss
-    initInvaders = 
-      let invaderBounds = [(-30,-30),(30,-30),(30,30),(-30,30)] -- 'area' do quadrado
-          invaderPoly   = Basic (Polyg invaderBounds 1.0 0.5 0.0 Filled) -- gera a forma do player
-      in object "boss" invaderPoly False (50, 60) (2, 0) () -- inicializa o player com esta forma gerada
+    initBoss :: Boss
+    initBoss = 
+      let invaderPoly = Tex (175/2, 215/2) inimigoMaior
+      in object "boss" invaderPoly False (-20, (215/2) - 40) (bossSpeed, 0) () -- inicializa o player com esta forma gerada
     
     resetInvadersPos :: [Boss] -> InvaderAction ()
     resetInvadersPos [] = return ()
     resetInvadersPos (i:xs) = do  
         setObjectAsleep False i
-        setObjectPosition (0,60) i
+        setObjectPosition (-20,(215/2) - 40) i
         resetInvadersPos xs
-        
-    resetHelperPos :: InvaderAction ()
-    resetHelperPos = do
-      helper <- findObject "helper" "helperGroup"
-      setObjectPosition (w/2, h+50) helper 
+
         
     checkInvadersMapCol :: [Boss] -> InvaderAction ()
     checkInvadersMapCol [] = return()
@@ -316,11 +297,11 @@ module Main where
             Level n -> case n of
                        1 -> return()
                        2 -> liftIOtoIOGame $ modifyMVar_ threadKiller (\x -> return(x+2))
-                       3 -> liftIOtoIOGame $ modifyMVar_ threadKiller (\x -> return(x+4))
+                       3 -> liftIOtoIOGame $ modifyMVar_ threadKiller (\x -> return(x+2))
     
     delayedStartup :: IO() -> IO()
     delayedStartup f = do
-        threadDelay 500000
+        threadDelay 500000000
         f
     
     wakePeriodically :: MVar Bool -> MVar Int -> Double -> IO()
@@ -345,9 +326,8 @@ module Main where
     --Enemy1
     createEnemyT1 :: String -> Boss
     createEnemyT1 name =
-        let invaderBounds = [(-pSqSize,-pSqSize*1.5),(pSqSize*2.5,-pSqSize*1.5),(pSqSize*2.5,pSqSize),(-pSqSize,pSqSize)]
-            invaderPoly   = Basic (Polyg invaderBounds 0.0 0.5 1.0 Filled)
-        in object name invaderPoly True (-10, (pSqSize+30)) (enemy1Speed,0) ()
+        let invaderPoly = Tex (117/2, 108/2) miniInimigo
+        in object name invaderPoly True (-10, ((108/2))) (enemy1Speed,0) ()
 
     createAsleepEnemies1 :: Int -> [Boss]
     createAsleepEnemies1 amount
@@ -382,9 +362,8 @@ module Main where
     --Enemy2
     createEnemyT2 :: String -> Boss
     createEnemyT2 name =
-        let invaderBounds = [(-pSqSize,-pSqSize),(pSqSize*2,-pSqSize),(pSqSize*2,pSqSize*3.5),(-pSqSize,pSqSize*3.5)]
-            invaderPoly   = Basic (Polyg invaderBounds 1.0 0.0 1.0 Filled)
-        in object name invaderPoly True (-10, (pSqSize+30)) (enemy2Speed,0) ()
+        let invaderPoly = Tex (132/2, 131/2) boss
+        in object name invaderPoly True (-10, (131/2) + 5) (enemy2Speed,0) ()
 
     createAsleepEnemies2 :: Int -> [Boss]
     createAsleepEnemies2 amount
@@ -420,7 +399,7 @@ module Main where
     setNewLevel n = do
       if(n >= 1 && n <= 3)
         then(do
-             resetLevelAttributes (10*(n))
+             resetLevelAttributes (bossHealth*(n))
 
              invaders <- getObjectsFromGroup "bossGroup"
              resetInvadersPos invaders
@@ -433,8 +412,6 @@ module Main where
 
              bullets <- getObjectsFromGroup "bulletGroup"
              disableAllBullets bullets
-
-             resetHelperPos
 
              setCurrentMapIndex (n-1))
              
